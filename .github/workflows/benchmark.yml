@@ -1,24 +1,12 @@
 # ─────────────────────────────────────────────────────────────
 # Benchmark — @layra/article-dx
-# Manual trigger (workflow_dispatch): benchmarks both binary
-# and JSON servers. Results uploaded as build artifacts.
+# Manual trigger: benchmarks binary + JSON servers.
 # ─────────────────────────────────────────────────────────────
 
 name: Benchmark
 
 on:
   workflow_dispatch:
-    inputs:
-      connections:
-        description: 'Connections (overridden by --ci in benchmark runner)'
-        required: true
-        default: '50'
-        type: string
-      duration:
-        description: 'Duration seconds (overridden by --ci in benchmark runner)'
-        required: true
-        default: '10'
-        type: string
 
 jobs:
   benchmark:
@@ -43,29 +31,39 @@ jobs:
 
       - name: Start binary server (background)
         run: |
-          npx tsx src/servers/binary-server.ts &
+          nohup npx tsx src/servers/binary-server.ts > /tmp/binary-server.log 2>&1 &
           echo "BINARY_PID=$!" >> $GITHUB_ENV
-          for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health 2>/dev/null)
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health 2>/dev/null || echo "000")
             if [ "$code" = "200" ]; then
-              echo "Binary server is ready"
+              echo "Binary server ready"
               break
             fi
-            sleep 0.5
+            sleep 1
           done
+          # Verify server is up
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health 2>/dev/null || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "Binary server failed to start"; cat /tmp/binary-server.log; exit 1
+          fi
 
       - name: Start Fastify server (background)
         run: |
-          npx tsx src/servers/fastify-server.ts &
+          nohup npx tsx src/servers/fastify-server.ts > /tmp/fastify-server.log 2>&1 &
           echo "FASTIFY_PID=$!" >> $GITHUB_ENV
-          for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/health 2>/dev/null)
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/health 2>/dev/null || echo "000")
             if [ "$code" = "200" ]; then
-              echo "Fastify server is ready"
+              echo "Fastify server ready"
               break
             fi
-            sleep 0.5
+            sleep 1
           done
+          # Verify server is up
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/health 2>/dev/null || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "Fastify server failed to start"; cat /tmp/fastify-server.log; exit 1
+          fi
 
       - name: Run benchmarks
         run: npx tsx benchmarks/run.ts --both --ci
@@ -85,3 +83,4 @@ jobs:
           kill $FASTIFY_PID 2>/dev/null || true
           wait $BINARY_PID 2>/dev/null || true
           wait $FASTIFY_PID 2>/dev/null || true
+          echo "Servers stopped"
