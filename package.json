@@ -1,0 +1,26 @@
+{
+  "name": "@layra/article-dx",
+  "version": "0.0.1",
+  "description": "Layra RPC — Declarative DTOs with Binary Protocol (Article Demo)",
+  "license": "ISC",
+  "author": "Artem Tantsura <dualitysol@gmail.com>",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "generate": "npx tsx src/codegen/compile.ts",
+    "start:binary": "npx tsx src/servers/binary-server.ts",
+    "start:fastify": "npx tsx src/servers/fastify-server.ts",
+    "bench": "npx tsx benchmarks/run.ts",
+    "test": "npx tsx --expose-gc tests/optimization.test.ts"
+  },
+  "dependencies": {
+    "@layra/rpc": "git+https://github.com/dualitysol/rpc.git",
+    "fastify": "^5.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "autocannon": "^7.15.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

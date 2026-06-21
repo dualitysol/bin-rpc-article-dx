@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────
+# Benchmark — @layra/article-dx
+# Manual trigger (workflow_dispatch): benchmarks both binary
+# and JSON servers. Results uploaded as build artifacts.
+# ─────────────────────────────────────────────────────────────
+
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      connections:
+        description: 'Connections (overridden by --ci in benchmark runner)'
+        required: true
+        default: '50'
+        type: string
+      duration:
+        description: 'Duration seconds (overridden by --ci in benchmark runner)'
+        required: true
+        default: '10'
+        type: string
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate binary payload
+        run: npx tsx benchmarks/generate-payload.ts
+
+      - name: Start binary server (background)
+        run: |
+          npx tsx src/servers/binary-server.ts &
+          echo "BINARY_PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health 2>/dev/null)
+            if [ "$code" = "200" ]; then
+              echo "Binary server is ready"
+              break
+            fi
+            sleep 0.5
+          done
+
+      - name: Start Fastify server (background)
+        run: |
+          npx tsx src/servers/fastify-server.ts &
+          echo "FASTIFY_PID=$!" >> $GITHUB_ENV
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/health 2>/dev/null)
+            if [ "$code" = "200" ]; then
+              echo "Fastify server is ready"
+              break
+            fi
+            sleep 0.5
+          done
+
+      - name: Run benchmarks
+        run: npx tsx benchmarks/run.ts --both --ci
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: results/
+          if-no-files-found: warn
+
+      - name: Stop servers
+        if: always()
+        run: |
+          kill $BINARY_PID 2>/dev/null || true
+          kill $FASTIFY_PID 2>/dev/null || true
+          wait $BINARY_PID 2>/dev/null || true
+          wait $FASTIFY_PID 2>/dev/null || true
